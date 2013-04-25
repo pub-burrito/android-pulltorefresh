@@ -11,13 +11,13 @@ import android.view.ViewGroup;
 import android.view.animation.LinearInterpolator;
 import android.view.animation.RotateAnimation;
 import android.widget.AbsListView;
+import android.widget.AbsListView.OnScrollListener;
 import android.widget.ImageView;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
-import android.widget.AbsListView.OnScrollListener;
 
 import com.markupartist.android.widget.pulltorefresh.R;
 
@@ -55,7 +55,7 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
     private int mLastMotionY;
 
     private boolean mBounceHack;
-
+    
     public PullToRefreshListView(Context context) {
         super(context);
         init(context);
@@ -103,7 +103,7 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
         mRefreshViewImage.setMinimumHeight(50);
         mRefreshView.setOnClickListener(new OnClickRefreshListener());
         mRefreshOriginalTopPadding = mRefreshView.getPaddingTop();
-
+        
         mRefreshState = TAP_TO_REFRESH;
 
         addHeaderView(mRefreshView);
@@ -126,7 +126,14 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 
         setSelection(1);
     }
-
+    
+    public void setPullEnabled(boolean enabled) {
+    	if (!enabled) {
+    		removeHeaderView(mRefreshView);
+    		setOnRefreshListener(null);
+    	}
+    }
+    
     /**
      * Set the listener that will receive notifications every time the list
      * scrolls.
@@ -162,37 +169,39 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        final int y = (int) event.getY();
-        mBounceHack = false;
-
-        switch (event.getAction()) {
-            case MotionEvent.ACTION_UP:
-                if (!isVerticalScrollBarEnabled()) {
-                    setVerticalScrollBarEnabled(true);
-                }
-                if (getFirstVisiblePosition() == 0 && mRefreshState != REFRESHING) {
-                    if ((mRefreshView.getBottom() >= mRefreshViewHeight
-                            || mRefreshView.getTop() >= 0)
-                            && mRefreshState == RELEASE_TO_REFRESH) {
-                        // Initiate the refresh
-                        mRefreshState = REFRESHING;
-                        prepareForRefresh();
-                        onRefresh();
-                    } else if (mRefreshView.getBottom() < mRefreshViewHeight
-                            || mRefreshView.getTop() <= 0) {
-                        // Abort refresh and scroll down below the refresh view
-                        resetHeader();
-                        setSelection(1);
-                    }
-                }
-                break;
-            case MotionEvent.ACTION_DOWN:
-                mLastMotionY = y;
-                break;
-            case MotionEvent.ACTION_MOVE:
-                applyHeaderPadding(event);
-                break;
-        }
+    	if (mOnRefreshListener != null) { //only treat touch events if there's a refresh listener, otherwise let's consider it disabled
+	        final int y = (int) event.getY();
+	        mBounceHack = false;
+	
+	        switch (event.getAction()) {
+	            case MotionEvent.ACTION_UP:
+	                if (!isVerticalScrollBarEnabled()) {
+	                    setVerticalScrollBarEnabled(true);
+	                }
+	                if (getFirstVisiblePosition() == 0 && mRefreshState != REFRESHING) {
+	                    if ((mRefreshView.getBottom() >= mRefreshViewHeight
+	                            || mRefreshView.getTop() >= 0)
+	                            && mRefreshState == RELEASE_TO_REFRESH) {
+	                        // Initiate the refresh
+	                        mRefreshState = REFRESHING;
+	                        prepareForRefresh();
+	                        onRefresh();
+	                    } else if (mRefreshView.getBottom() < mRefreshViewHeight
+	                            || mRefreshView.getTop() <= 0) {
+	                        // Abort refresh and scroll down below the refresh view
+	                        resetHeader();
+	                        setSelection(1);
+	                    }
+	                }
+	                break;
+	            case MotionEvent.ACTION_DOWN:
+	                mLastMotionY = y;
+	                break;
+	            case MotionEvent.ACTION_MOVE:
+	                applyHeaderPadding(event);
+	                break;
+	        }
+    	}
         return super.onTouchEvent(event);
     }
 
@@ -277,40 +286,42 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
     @Override
     public void onScroll(AbsListView view, int firstVisibleItem,
             int visibleItemCount, int totalItemCount) {
-        // When the refresh view is completely visible, change the text to say
-        // "Release to refresh..." and flip the arrow drawable.
-        if (mCurrentScrollState == SCROLL_STATE_TOUCH_SCROLL
-                && mRefreshState != REFRESHING) {
-            if (firstVisibleItem == 0) {
-                mRefreshViewImage.setVisibility(View.VISIBLE);
-                if ((mRefreshView.getBottom() >= mRefreshViewHeight + 20
-                        || mRefreshView.getTop() >= 0)
-                        && mRefreshState != RELEASE_TO_REFRESH) {
-                    mRefreshViewText.setText(R.string.pull_to_refresh_release_label);
-                    mRefreshViewImage.clearAnimation();
-                    mRefreshViewImage.startAnimation(mFlipAnimation);
-                    mRefreshState = RELEASE_TO_REFRESH;
-                } else if (mRefreshView.getBottom() < mRefreshViewHeight + 20
-                        && mRefreshState != PULL_TO_REFRESH) {
-                    mRefreshViewText.setText(R.string.pull_to_refresh_pull_label);
-                    if (mRefreshState != TAP_TO_REFRESH) {
-                        mRefreshViewImage.clearAnimation();
-                        mRefreshViewImage.startAnimation(mReverseFlipAnimation);
-                    }
-                    mRefreshState = PULL_TO_REFRESH;
-                }
-            } else {
-                mRefreshViewImage.setVisibility(View.GONE);
-                resetHeader();
-            }
-        } else if (mCurrentScrollState == SCROLL_STATE_FLING
-                && firstVisibleItem == 0
-                && mRefreshState != REFRESHING) {
-            setSelection(1);
-            mBounceHack = true;
-        } else if (mBounceHack && mCurrentScrollState == SCROLL_STATE_FLING) {
-            setSelection(1);
-        }
+    	if (mOnRefreshListener != null) { //only treat touch events if there's a refresh listener, otherwise let's consider it disabled
+	        // When the refresh view is completely visible, change the text to say
+	        // "Release to refresh..." and flip the arrow drawable.
+	        if (mCurrentScrollState == SCROLL_STATE_TOUCH_SCROLL
+	                && mRefreshState != REFRESHING) {
+	            if (firstVisibleItem == 0) {
+	                mRefreshViewImage.setVisibility(View.VISIBLE);
+	                if ((mRefreshView.getBottom() >= mRefreshViewHeight + 20
+	                        || mRefreshView.getTop() >= 0)
+	                        && mRefreshState != RELEASE_TO_REFRESH) {
+	                    mRefreshViewText.setText(R.string.pull_to_refresh_release_label);
+	                    mRefreshViewImage.clearAnimation();
+	                    mRefreshViewImage.startAnimation(mFlipAnimation);
+	                    mRefreshState = RELEASE_TO_REFRESH;
+	                } else if (mRefreshView.getBottom() < mRefreshViewHeight + 20
+	                        && mRefreshState != PULL_TO_REFRESH) {
+	                    mRefreshViewText.setText(R.string.pull_to_refresh_pull_label);
+	                    if (mRefreshState != TAP_TO_REFRESH) {
+	                        mRefreshViewImage.clearAnimation();
+	                        mRefreshViewImage.startAnimation(mReverseFlipAnimation);
+	                    }
+	                    mRefreshState = PULL_TO_REFRESH;
+	                }
+	            } else {
+	                mRefreshViewImage.setVisibility(View.GONE);
+	                resetHeader();
+	            }
+	        } else if (mCurrentScrollState == SCROLL_STATE_FLING
+	                && firstVisibleItem == 0
+	                && mRefreshState != REFRESHING) {
+	            setSelection(1);
+	            mBounceHack = true;
+	        } else if (mBounceHack && mCurrentScrollState == SCROLL_STATE_FLING) {
+	            setSelection(1);
+	        }
+    	}
 
         if (mOnScrollListener != null) {
             mOnScrollListener.onScroll(view, firstVisibleItem,
@@ -365,7 +376,9 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
     /**
      * Resets the list to a normal state after a refresh.
      */
-    public void onRefreshComplete() {        
+    public void onRefreshComplete() {
+    	if (mOnRefreshListener == null) return;
+    	
         Log.d(TAG, "onRefreshComplete");
 
         resetHeader();
