@@ -144,9 +144,13 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
     
     public void setPullEnabled(boolean enabled) {
     	if (!enabled) {
-    		removeHeaderView(mRefreshView);
-    		removeHeaderView(mRevealView);
-    		removeFooterView(mFillerFooterView);
+    		try {
+	    		if (mRefreshView != null) 		removeHeaderView(mRefreshView);
+	    		if (mRevealView != null) 		removeHeaderView(mRevealView);
+	    		if (mFillerFooterView != null) 	removeFooterView(mFillerFooterView);
+    		} catch (Exception e) {
+    			Log.e(TAG, "Could not disable pull to refresh views", e);
+    		}
     		setOnRefreshListener(null);
     	}
     }
