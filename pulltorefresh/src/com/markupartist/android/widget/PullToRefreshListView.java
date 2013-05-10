@@ -5,6 +5,7 @@ import java.lang.reflect.Field;
 import java.util.List;
 
 import android.content.Context;
+import android.os.Handler;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -15,6 +16,7 @@ import android.view.animation.LinearInterpolator;
 import android.view.animation.RotateAnimation;
 import android.widget.AbsListView;
 import android.widget.AbsListView.OnScrollListener;
+import android.widget.HeaderViewListAdapter;
 import android.widget.ImageView;
 import android.widget.ListAdapter;
 import android.widget.ListView;
@@ -26,12 +28,15 @@ import com.markupartist.android.widget.pulltorefresh.R;
 
 public class PullToRefreshListView extends ListView implements OnScrollListener {
 
-    private static final int TAP_TO_REFRESH = 1;
+	
+	private static final int TAP_TO_REFRESH = 1;
     private static final int PULL_TO_REFRESH = 2;
     private static final int RELEASE_TO_REFRESH = 3;
     private static final int REFRESHING = 4;
 
     private static final String TAG = "PullToRefreshListView";
+    
+    private static final int RELEASE_DELAY = 500;
 
     private OnRefreshListener mOnRefreshListener;
     private OnRevealListener mOnRevealListener;
@@ -60,8 +65,13 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
     private int mRefreshViewHeight;
     private int mRefreshOriginalTopPadding;
     private int mLastMotionY;
+    private int mInitialMoveFirstVisiblePosition = Integer.MAX_VALUE;
+    private int mDir = 0;
+    
+    private Handler handler;
 
     private boolean mBounceHack;
+    private boolean mIsDown;
     
     public PullToRefreshListView(Context context) {
         super(context);
@@ -117,7 +127,9 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
         mRefreshView.setOnClickListener(new OnClickRefreshListener());
         mRefreshOriginalTopPadding = mRefreshView.getPaddingTop();
         
-        mRefreshState = TAP_TO_REFRESH;
+        handler = new Handler();
+        
+        changeState(TAP_TO_REFRESH);
 
         addHeaderView(mRefreshView);
         addHeaderView(mRevealView);
@@ -128,6 +140,12 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
         measureView(mRefreshView);
         mRefreshViewHeight = mRefreshView.getMeasuredHeight();
     }
+
+	protected void changeState(int state) {
+		mRefreshState = state;
+		
+		handler.removeCallbacks(changeStateToReleaseToRefresh);
+	}
 
     @Override
     protected void onAttachedToWindow() {
@@ -151,6 +169,12 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
     		} catch (Exception e) {
     			Log.e(TAG, "Could not disable pull to refresh views", e);
     		}
+    		
+    		ListAdapter currentAdapter = getAdapter();
+    		if (currentAdapter instanceof HeaderViewListAdapter) {
+    			setAdapter(((HeaderViewListAdapter) currentAdapter).getWrappedAdapter());
+    		}
+    		
     		setOnRefreshListener(null);
     	}
     }
@@ -206,6 +230,7 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 	        switch (event.getAction()) {
 	            case MotionEvent.ACTION_UP:
 	            	Log.d(TAG, "Action Up. First visible: " + getFirstVisiblePosition() + ", state: " + mRefreshState);
+	            	mIsDown = false;
 	            	
 	                if (!isVerticalScrollBarEnabled()) {
 	                    setVerticalScrollBarEnabled(true);
@@ -215,7 +240,10 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 	                            || mRefreshView.getTop() >= 0)
 	                            && mRefreshState == RELEASE_TO_REFRESH) {
 	                        // Initiate the refresh
-	                        mRefreshState = REFRESHING;
+	                    	changeState(REFRESHING);
+	                        
+	                        Log.d(TAG, "Changing state to REFRESHING=" + REFRESHING);
+	                        
 	                        prepareForRefresh();
 	                        onRefresh();
 	                    } else if (mRefreshView.getBottom() < mRefreshViewHeight
@@ -227,12 +255,18 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 	                }
 	                break;
 	            case MotionEvent.ACTION_DOWN:
-	            	Log.d(TAG, "Action Down. state: " + mRefreshState);
+	            	Log.d(TAG, "Action Down. First visible: " + getFirstVisiblePosition() + ", state: " + mRefreshState);
 	            	
 	                mLastMotionY = y;
+	                mInitialMoveFirstVisiblePosition = getFirstVisiblePosition();
+	                mIsDown = true;
+	                mDir = 0;
+	                
 	                break;
 	            case MotionEvent.ACTION_MOVE:
 	            	Log.d(TAG, "Action Move. state: " + mRefreshState);
+	            	
+	            	mDir = mLastMotionY < y ? 1 : -1;
 	            	
 	                applyHeaderPadding(event);
 	                break;
@@ -246,7 +280,7 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
         int pointerCount = ev.getHistorySize();
 
         for (int p = 0; p < pointerCount; p++) {
-            if (mRefreshState == RELEASE_TO_REFRESH) {
+            if (mRefreshState == RELEASE_TO_REFRESH || mRefreshState == PULL_TO_REFRESH) {
                 if (isVerticalFadingEdgeEnabled()) {
                     setVerticalScrollBarEnabled(false);
                 }
@@ -306,7 +340,8 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
      */
     private void resetHeader() {
         if (mRefreshState != TAP_TO_REFRESH) {
-            mRefreshState = TAP_TO_REFRESH;
+            changeState(TAP_TO_REFRESH);
+            Log.d(TAG, "Changing state to TAP_TO_REFRESH=" + TAP_TO_REFRESH);
 
             resetHeaderPadding();
 
@@ -343,33 +378,46 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
         child.measure(childWidthSpec, childHeightSpec);
     }
 
+    Runnable changeStateToReleaseToRefresh = new Runnable() {
+
+		@Override
+		public void run() {
+			mRefreshViewText.setText(R.string.pull_to_refresh_release_label);
+            mRefreshViewImage.clearAnimation();
+            mRefreshViewImage.startAnimation(mFlipAnimation);
+            changeState(RELEASE_TO_REFRESH);
+            
+            Log.d(TAG, "Changing state to RELEASE_TO_REFRESH=" + RELEASE_TO_REFRESH);
+		}
+		
+    };
+    
     @Override
     public void onScroll(AbsListView view, int firstVisibleItem,
             int visibleItemCount, int totalItemCount) {
-    	Log.d(TAG, "onScroll: state: " + mCurrentScrollState + ", firstVisibleItem: " + firstVisibleItem);
+    	Log.d(TAG, "onScroll: state: " + mCurrentScrollState + ", firstVisibleItem: " + firstVisibleItem + ", dir: " + mDir);
     	
     	if (mOnRefreshListener != null) { //only treat touch events if there's a refresh listener, otherwise let's consider it disabled
     		
     		boolean canSeeHeaders = firstVisibleItem < getHeaderViewsCount();
+    		boolean isScrollingUp = mDir == 1;
     		
 	        // When the refresh view is completely visible, change the text to say
 	        // "Release to refresh..." and flip the arrow drawable.
 	        if (mCurrentScrollState == SCROLL_STATE_TOUCH_SCROLL
 	                && mRefreshState != REFRESHING) {
 	        	
-	            if (firstVisibleItem == 0) {
+	            if (canSeeHeaders) {
+	            	
 	                mRefreshViewImage.setVisibility(View.VISIBLE);
 	                //mRefreshView.setVisibility(View.VISIBLE);
 	                if ((mRefreshView.getBottom() >= mRefreshViewHeight + 20
 	                        || mRefreshView.getTop() >= 0)
 	                        && mRefreshState != RELEASE_TO_REFRESH) {
 	                    
-	                	mRefreshViewText.setText(R.string.pull_to_refresh_release_label);
-	                    mRefreshViewImage.clearAnimation();
-	                    mRefreshViewImage.startAnimation(mFlipAnimation);
-	                    mRefreshState = RELEASE_TO_REFRESH;
+	                	handler.postDelayed(changeStateToReleaseToRefresh, RELEASE_DELAY);
 	                    
-	                } else if (mRefreshView.getBottom() < mRefreshViewHeight + 20
+	                } else if (mRefreshView.getBottom() < mRefreshViewHeight/2// + 20
 	                        && mRefreshState != PULL_TO_REFRESH) {
 	                	
 	                    mRefreshViewText.setText(R.string.pull_to_refresh_pull_label);
@@ -377,7 +425,9 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 	                        mRefreshViewImage.clearAnimation();
 	                        mRefreshViewImage.startAnimation(mReverseFlipAnimation);
 	                    }
-	                    mRefreshState = PULL_TO_REFRESH;
+	                    changeState(PULL_TO_REFRESH);
+	                    
+	                    Log.d(TAG, "Changing state to PULL_TO_REFRESH=" + PULL_TO_REFRESH);
 	                    
 	                }
 	            } else {
@@ -387,12 +437,17 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 	            }
 	        } else if (mCurrentScrollState == SCROLL_STATE_FLING
 	                && canSeeHeaders
-	                && mRefreshState != REFRESHING) {
+	                && mRefreshState != REFRESHING
+	                && isScrollingUp
+	                && !mIsDown) {
 	        	
 	            setFirstSelected();
 	            mBounceHack = true;
 	            
-	        } else if (mBounceHack && mCurrentScrollState == SCROLL_STATE_FLING && canSeeHeaders) {
+	        } else if (mCurrentScrollState == SCROLL_STATE_FLING 
+	        		&& canSeeHeaders
+	        		&& mBounceHack
+	        		&& isScrollingUp) {
 	            setFirstSelected();
 	            mBounceHack = false;
 	        }
@@ -412,6 +467,7 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 
         if (mCurrentScrollState == SCROLL_STATE_IDLE) {
             mBounceHack = false;
+            mDir = 0;
         }
 
         if (mOnScrollListener != null) {
@@ -431,7 +487,9 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
         // Set refresh view text to the refreshing label
         mRefreshViewText.setText(R.string.pull_to_refresh_refreshing_label);
 
-        mRefreshState = REFRESHING;
+        changeState(REFRESHING);
+        
+        Log.d(TAG, "Changing state to PULL_TO_REFRESH=" + PULL_TO_REFRESH);
     }
 
     public void onRefresh() {
@@ -497,23 +555,41 @@ public class PullToRefreshListView extends ListView implements OnScrollListener 
 	}
 
 	public void setFirstSelected() {
-		Log.d(TAG, "Selecting first item from list");
+		//handler.removeCallbacks(setFirstSelected);
+		//handler.post(setFirstSelected);
+		setFirstSelected.run();
 		
-		setSelection(getFirstSelectableItem());
 	}
 
+	Runnable setFirstSelected = new Runnable() {
+		@Override
+		public void run() {
+			Log.d(TAG, "Selecting first item from list");
+			
+			setSelection(getFirstSelectableItem());
+			
+			changeState(TAP_TO_REFRESH);
+		}
+	};
+
 	public int getFirstSelectableItem() {
-		//Log.d(TAG, "firstVisiblePosition: " + getFirstVisiblePosition() + ", headerViews: " + getHeaderViewsCount() + ", state: " + mRefreshState);
+		int revealIndex = 1;
+		int firstVisiblePosition = getFirstVisiblePosition();
+		
+		Log.d(TAG, "firstVisiblePosition: " + firstVisiblePosition + ", headerViews: " + getHeaderViewsCount() + ", state: " + mRefreshState);
+		
+		//if (firstVisiblePosition == revealIndex) return revealIndex;
 		
 		int selectedPos = 
-				getFirstVisiblePosition() < getHeaderViewsCount() && 
+				mInitialMoveFirstVisiblePosition <= getHeaderViewsCount() && mDir == 1 ||
+				firstVisiblePosition < getHeaderViewsCount() && 
 				getHeaderViewsCount() > 1 && 
 				(mRefreshState != TAP_TO_REFRESH) ? 
 			getHeaderViewsCount() - 1 : 
 			getHeaderViewsCount();
 			
 			
-		if (selectedPos == indexOfChild(mRevealView) && mOnRevealListener != null) {
+		if (selectedPos == revealIndex && mOnRevealListener != null) {
 			mOnRevealListener.onReveal();
 		}
 		
