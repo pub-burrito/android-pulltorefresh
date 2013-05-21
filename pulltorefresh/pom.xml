@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>com.markupartist.android.widget</groupId>
+	<artifactId>pulltorefresh</artifactId>
+	<version>0.1-SNAPSHOT</version>
+	<name>PullToRefresh</name>
+	<packaging>apklib</packaging>
+
+	<repositories>
+	  <repository>
+	      <id>cloud.archiva.internal</id>
+	      <url>http://cloud.local:8180/archiva/repository/internal/</url>
+	  </repository>
+	  <repository>
+	      <id>cloud.archiva.snapshots</id>
+	      <url>http://cloud.local:8180/archiva/repository/snapshots/</url>
+	  </repository>
+	  <repository>
+	      <id>sonatype.oss.public</id>
+	      <url>https://oss.sonatype.org/content/groups/public/</url>
+	  </repository>
+	  <repository>
+	      <id>ldsmobile</id>
+	      <url>http://www.ldsmobile.org/nexus/content/repositories/public/</url>
+	  </repository>
+	</repositories>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.google.android</groupId>
+			<artifactId>android</artifactId>
+			<version>4.1.1.4</version>
+			<scope>provided</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<sourceDirectory>src</sourceDirectory>
+
+		<plugins>
+			<plugin>
+				<groupId>com.jayway.maven.plugins.android.generation2</groupId>
+				<artifactId>android-maven-plugin</artifactId>
+				<version>3.5.1</version>
+				<extensions>true</extensions>
+				<configuration>
+					<nativeLibrariesDirectory>ignored</nativeLibrariesDirectory>
+				</configuration>
+			</plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>1.7</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>attach-artifact</goal>
+                        </goals>
+                        <configuration>
+                            <artifacts>
+                                <artifact>
+                                    <type>jar</type>
+                                    <file>${project.build.directory}/${project.build.finalName}.jar</file>
+                                </artifact>
+                            </artifacts>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+		</plugins>
+	</build>
+</project>
