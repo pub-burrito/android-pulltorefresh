@@ -62,6 +62,9 @@
 				<extensions>true</extensions>
 				<configuration>
 					<nativeLibrariesDirectory>ignored</nativeLibrariesDirectory>
+					<sdk>
+						<platform>3</platform>
+					</sdk>
 				</configuration>
 			</plugin>
 
