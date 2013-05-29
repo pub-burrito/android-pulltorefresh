@@ -63,7 +63,7 @@
 				<configuration>
 					<nativeLibrariesDirectory>ignored</nativeLibrariesDirectory>
 					<sdk>
-						<platform>3</platform>
+						<platform>16</platform>
 					</sdk>
 				</configuration>
 			</plugin>
